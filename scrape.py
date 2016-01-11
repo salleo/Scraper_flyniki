@@ -1,114 +1,13 @@
 # coding: utf-8
 
 from datetime import datetime
-import json
+# import json
 import lxml.html
 import requests
 
-import lscache
+# import lscache
 from lsgrab.query import *
 from lsgrab.quote import *
-
-
-class PriceTable(object):
-
-    def __init__(self, client, query):
-        self._client = client
-        self._in_fl_id = ''
-        # self._query = query
-        self._outbound_list = []
-        self._inbound_list = []
-        self.fare_index_table = {}
-        self._setup()
-
-    def __str__(self):
-        return '<{} - '.format(self.__class__.__name__)
-
-    def _setup(self):
-        # search for outbound flight id of the selected leg
-        res = self._client.doc.xpath('//*[@'
-                        'class="flightrow selected"]/td[5]')
-        out_fl_id = res[0].getchildren()[2].value
-
-        # search for fare index of the selected leg
-        res = self._client.doc.xpath('//*[@class="flightrow selected"]/td[5]/label')
-        fare_index = res[0].getchildren()[0].values()[3]
-        if fare_index == '':
-            fare_index = '0'
-
-        # request server for information
-        result = self._client.server_request('outbound', fare_index, out_fl_id)
-
-        result_inbound = result.json()['data']['getFareList']['return']
-        result_outbound = result.json()['data']['getFareList']['outbound']
-
-        # search for inbound flight id for the fare index
-        for item in result_inbound:
-            if item['fareIndex'] == fare_index:
-                self._in_fl_id = item['flightId']
-        self.fare_index_table[(out_fl_id, self._in_fl_id)] = {'fareIndex': fare_index}
-
-        # filling the first row and the first column in fare index table for outbound and return flight ids
-
-        for item in result_outbound:
-            if item['fareType'] == 'EASY':
-                self.fare_index_table[(item['flightId'], self._in_fl_id)] = {'fareIndex': item['fareIndex']}
-                self._outbound_list.append(item['flightId'])
-        for item in result_inbound:
-            if item['fareType'] == 'EASY':
-                self.fare_index_table[(out_fl_id, item['flightId'])] = {'fareIndex': item['fareIndex']}
-                self._inbound_list.append(item['flightId'])
-
-    def get_price_doc(self):
-
-        # filling the fare index table
-        for i in self._outbound_list:
-
-            result = self._client.server_request('outbound', self.fare_index_table[(i, self._in_fl_id)]['fareIndex'], i)
-            res_inbound = result.json()['data']['getFareList']['return']
-
-            for ii in res_inbound:
-                if ii['fareType'] == 'EASY':
-                    self.fare_index_table[(i, ii['flightId'])] = {'fareIndex': ii['fareIndex']}
-
-        for i in self._outbound_list:
-            for ii in self._inbound_list:
-                try:
-                    result = self._client.server_request('return', self.fare_index_table[(i, ii)]['fareIndex'], ii)
-                    result = result.json()['templates']['priceoverview']
-                    result = lxml.html.document_fromstring(result)
-
-                    prices = result.xpath('//*[@class="totalPerPaxType"]/td')
-                    pricelist = []
-                    for x in xrange(3):
-                        pricelist.append(prices[x+1].text[2:])
-                        if pricelist[x][-3] == ',':
-                            pricelist[x] = pricelist[x].replace('.', '').replace(',', '.')
-                        else:
-                            pricelist[x] = pricelist[x].replace(',', '')
-                    self.fare_index_table[(i, ii)]['priceadult'] = float(pricelist[0])
-
-                    if query.child != '0':
-                        self.fare_index_table[(i, ii)]['pricechild'] = float(pricelist[1])
-                        if query.infant != '0':
-                            self.fare_index_table[(i, ii)]['priceinfant'] = float(pricelist[2])
-                        else:
-                            self.fare_index_table[(i, ii)]['priceinfant'] = 0
-                    else:
-                        self.fare_index_table[(i, ii)]['pricechild'] = 0
-                        if query.infant != '0':
-                            self.fare_index_table[(i, ii)]['priceinfant'] = float(prices[1])
-                        else:
-                            self.fare_index_table[(i, ii)]['priceinfant'] = 0
-                    self.fare_index_table[(i, ii)]['price_error'] = False
-                except KeyError:
-                    self.fare_index_table[(i, ii)] = {'price_error': True}
-
-            print 'iter=', i
-        return self.fare_index_table
-
-
-
 
 
 class Client(object):
@@ -124,7 +23,6 @@ class Client(object):
         self._opendateoverview = ''
 
         self.doc = None
-
 
         self._setup()
 
@@ -220,6 +118,103 @@ class Client(object):
         return self._session.post(self._session_url, data=data)
 
 
+class PriceTable(object):
+
+    def __init__(self, client):
+        self._client = client
+        self._in_fl_id = ''
+        # self._query = query
+        self._outbound_list = []
+        self._inbound_list = []
+        self.fare_index_table = {}
+        self._setup()
+
+    def __str__(self):
+        return '<{} - '.format(self.__class__.__name__)
+
+    def _setup(self):
+        # search for outbound flight id of the selected leg
+        res = self._client.doc.xpath('//*[@class="flightrow selected"]/td[5]')
+        out_fl_id = res[0].getchildren()[2].value
+
+        # search for fare index of the selected leg
+        res = self._client.doc.xpath('//*[@class="flightrow selected"]/td[5]/label')
+        fare_index = res[0].getchildren()[0].values()[3]
+        if fare_index == '':
+            fare_index = '0'
+
+        # request server for information
+        result = self._client.server_request('outbound', fare_index, out_fl_id)
+
+        result_inbound = result.json()['data']['getFareList']['return']
+        result_outbound = result.json()['data']['getFareList']['outbound']
+
+        # search for inbound flight id for the fare index
+        for item in result_inbound:
+            if item['fareIndex'] == fare_index:
+                self._in_fl_id = item['flightId']
+        self.fare_index_table[(out_fl_id, self._in_fl_id)] = {'fareIndex': fare_index}
+
+        # filling the first row and the first column in fare index table for outbound and return flight ids
+
+        for item in result_outbound:
+            if item['fareType'] == 'EASY':
+                self.fare_index_table[(item['flightId'], self._in_fl_id)] = {'fareIndex': item['fareIndex']}
+                self._outbound_list.append(item['flightId'])
+        for item in result_inbound:
+            if item['fareType'] == 'EASY':
+                self.fare_index_table[(out_fl_id, item['flightId'])] = {'fareIndex': item['fareIndex']}
+                self._inbound_list.append(item['flightId'])
+
+    def get_price_doc(self):
+
+        # filling the fare index table
+        for i in self._outbound_list:
+
+            result = self._client.server_request('outbound', self.fare_index_table[(i, self._in_fl_id)]['fareIndex'], i)
+            res_inbound = result.json()['data']['getFareList']['return']
+
+            for ii in res_inbound:
+                if ii['fareType'] == 'EASY':
+                    self.fare_index_table[(i, ii['flightId'])] = {'fareIndex': ii['fareIndex']}
+
+        for i in self._outbound_list:
+            for ii in self._inbound_list:
+                try:
+                    result = self._client.server_request('return', self.fare_index_table[(i, ii)]['fareIndex'], ii)
+                    result = result.json()['templates']['priceoverview']
+                    result = lxml.html.document_fromstring(result)
+
+                    prices = result.xpath('//*[@class="totalPerPaxType"]/td')
+                    pricelist = []
+                    for x in xrange(3):
+                        pricelist.append(prices[x+1].text[2:])
+                        if pricelist[x][-3] == ',':
+                            pricelist[x] = pricelist[x].replace('.', '').replace(',', '.')
+                        else:
+                            pricelist[x] = pricelist[x].replace(',', '')
+                    self.fare_index_table[(i, ii)]['priceadult'] = float(pricelist[0])
+
+                    if query.child != '0':
+                        self.fare_index_table[(i, ii)]['pricechild'] = float(pricelist[1])
+                        if query.infant != '0':
+                            self.fare_index_table[(i, ii)]['priceinfant'] = float(pricelist[2])
+                        else:
+                            self.fare_index_table[(i, ii)]['priceinfant'] = 0
+                    else:
+                        self.fare_index_table[(i, ii)]['pricechild'] = 0
+                        if query.infant != '0':
+                            self.fare_index_table[(i, ii)]['priceinfant'] = float(prices[1])
+                        else:
+                            self.fare_index_table[(i, ii)]['priceinfant'] = 0
+                    self.fare_index_table[(i, ii)]['price_error'] = False
+                except KeyError:
+                    self.fare_index_table[(i, ii)] = {'price_error': True}
+
+            print 'iter=', i
+        return self.fare_index_table
+
+
 class Scraper(object):
 
     def __init__(self, language, country):
@@ -282,7 +277,7 @@ class Scraper(object):
         currency_element = get_currency(client.doc)
         currency = currency_element[0].text
 
-        price_index_table = PriceTable(client, query)
+        price_index_table = PriceTable(client)
         price_index_table.get_price_doc()
 
         outbound_leg_elements = get_outbound_leg_elements(client.doc)
@@ -296,16 +291,23 @@ class Scraper(object):
             if inbound_legs:
                 for in_leg in inbound_legs:
                     if not price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['price_error']:
-                        quote_price = [price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['priceadult'],
-                                       price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['pricechild'],
-                                       price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['priceinfant'],
+                        quote_price = [price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]
+                                                                         ['priceadult'],
+                                       price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]
+                                                                         ['pricechild'],
+                                       price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]
+                                                                         ['priceinfant'],
                                        ]
                         quote = Quote(quote_price, currency)
                         quote.add_leg(out_leg)
                         quote.add_leg(in_leg)
                         quotes.append(quote)
             else:
-                quote = Quote(currency)
+                quote_price = [price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['priceadult'],
+                               price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['pricechild'],
+                               price_index_table.fare_index_table[(out_leg.flightid, in_leg.flightid)]['priceinfant'],
+                               ]
+                quote = Quote(quote_price, currency)
                 quote.add_leg(out_leg)
                 quotes.append(quote)
 
@@ -330,7 +332,8 @@ if __name__ == '__main__':
     print scraper
     quotes = sorted(scraper.scrape(query), key=lambda x: x.price)
     for i, quote in enumerate(quotes):
-        print 'Quote {}, price = {}{}: adults - {}, child - {}, infant - {}'.format(i, quote.price.value, quote.price.currency, query.adult, query.child, query.infant)
+        print 'Quote {}, price = {}{}: adults - {}, child - {}, infant - {}'\
+            .format(i, quote.price.value, quote.price.currency, query.adult, query.child, query.infant)
         for ii, leg in enumerate(quote.legs):
             print '\tLeg {}, price = {}{}'.format(ii, leg.price, quote.price.currency)
             for iii, segment in enumerate(leg.segments):
